@@ -80,20 +80,13 @@ button:hover{background:#ffb84d;}
 <script>
 let board=[],selected=null,turn="red",playerColor="red",aiColor="black",difficulty="normal";
 
-function chooseLevel(lvl){
-  difficulty=lvl;
-  document.getElementById("levelScreen").classList.add("hide");
-  document.getElementById("colorScreen").classList.remove("hide");
-}
+const DEPTH={beginner:1,normal:2,hard:5,impossible:7};
 
-function restart(){
-  document.getElementById("gameScreen").classList.add("hide");
-  document.getElementById("levelScreen").classList.remove("hide");
-}
+function chooseLevel(lvl){difficulty=lvl;document.getElementById("levelScreen").classList.add("hide");document.getElementById("colorScreen").classList.remove("hide");}
+function restart(){document.getElementById("gameScreen").classList.add("hide");document.getElementById("levelScreen").classList.remove("hide");}
 
 function start(color){
-  playerColor=color;
-  aiColor=color==="red"?"black":"red";
+  playerColor=color;aiColor=color==="red"?"black":"red";
   document.getElementById("colorScreen").classList.add("hide");
   document.getElementById("gameScreen").classList.remove("hide");
   document.getElementById("levelTag").textContent=difficulty.toUpperCase();
@@ -104,11 +97,10 @@ function newGame(){
   board=Array(8).fill().map(()=>Array(8).fill(null));
   for(let r=0;r<3;r++)for(let c=0;c<8;c++)if((r+c)%2===1)board[r][c]={color:"black",king:false};
   for(let r=5;r<8;r++)for(let c=0;c<8;c++)if((r+c)%2===1)board[r][c]={color:"red",king:false};
-  selected=null;
-  turn="red";
+  selected=null;turn="red";
   document.getElementById("status").textContent=turn===playerColor?"Your turn":"AI thinking...";
   render();
-  if(turn!==playerColor)setTimeout(aiMove,800);
+  if(turn!==playerColor)setTimeout(aiMove,400);
 }
 
 function render(){
@@ -139,19 +131,13 @@ function render(){
 }
 
 function hasCaptureAvailable(b,color){
-  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
-    if(b[r][c]&&b[r][c].color===color){
-      if(getCaptures(b,r,c).length>0)return true;
-    }
-  }
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++)if(b[r][c]&&b[r][c].color===color&&getCaptures(b,r,c).length>0)return true;
   return false;
 }
 
 function getCaptures(b,r,c){
-  const p=b[r][c];
-  if(!p)return[];
-  const captures=[];
-  const dirs=[[1,1],[1,-1],[-1,1],[-1,-1]];
+  const p=b[r][c];if(!p)return[];
+  const captures=[];const dirs=[[1,1],[1,-1],[-1,1],[-1,-1]];
   if(p.king){
     for(const[dr,dc]of dirs){
       let foundEnemy=null;
@@ -162,26 +148,20 @@ function getCaptures(b,r,c){
           if(b[nr][nc].color===p.color)break;
           if(foundEnemy)break;
           foundEnemy={r:nr,c:nc};
-        }else if(foundEnemy){
-          captures.push({r:nr,c:nc,jr:foundEnemy.r,jc:foundEnemy.c});
-        }
+        }else if(foundEnemy){captures.push({r:nr,c:nc,jr:foundEnemy.r,jc:foundEnemy.c});}
       }
     }
   }else{
     for(const[dr,dc]of dirs){
-      const nr=r+dr,nc=c+dc;
-      const jr=r+dr*2,jc=c+dc*2;
-      if(jr>=0&&jr<8&&jc>=0&&jc<8&&!b[jr][jc]&&b[nr]&&b[nr][nc]&&b[nr][nc].color!==p.color){
-        captures.push({r:jr,c:jc,jr:nr,jc:nc});
-      }
+      const nr=r+dr,nc=c+dc,jr=r+dr*2,jc=c+dc*2;
+      if(jr>=0&&jr<8&&jc>=0&&jc<8&&!b[jr][jc]&&b[nr]&&b[nr][nc]&&b[nr][nc].color!==p.color)captures.push({r:jr,c:jc,jr:nr,jc:nc});
     }
   }
   return captures;
 }
 
 function getMoves(b,r,c,mustCapture){
-  const p=b[r][c];
-  if(!p)return[];
+  const p=b[r][c];if(!p)return[];
   const captures=getCaptures(b,r,c);
   if(mustCapture)return captures;
   if(captures.length>0)return captures;
@@ -219,24 +199,17 @@ function click(r,c){
       if(playerColor==="red"&&r===0)board[r][c].king=true;
       if(playerColor==="black"&&r===7)board[r][c].king=true;
       const moreCaptures=move.jr!==undefined?getCaptures(board,r,c):[];
-      if(moreCaptures.length>0){
-        selected={r,c};
-        render();
-        return;
-      }
-      selected=null;
-      turn=aiColor;
+      if(moreCaptures.length>0){selected={r,c};render();return;}
+      selected=null;turn=aiColor;
       document.getElementById("status").textContent="AI thinking...";
       render();
-      setTimeout(aiMove,600);
+      setTimeout(aiMove,400);
       return;
     }
     selected=null;
   }
   if(board[r][c]&&board[r][c].color===playerColor){
-    if(mustCapture){
-      if(getCaptures(board,r,c).length===0){render();return;}
-    }
+    if(mustCapture){if(getCaptures(board,r,c).length===0){render();return;}}
     selected={r,c};
   }
   render();
@@ -264,46 +237,89 @@ function applyMove(b,move){
   const piece=nb[move.to.r][move.to.c];
   if(piece.color==="red"&&move.to.r===0)piece.king=true;
   if(piece.color==="black"&&move.to.r===7)piece.king=true;
+  if(move.isCapture){
+    const more=getCaptures(nb,move.to.r,move.to.c);
+    if(more.length>0){
+      const next=more[0];
+      return applyMove(nb,{from:{r:move.to.r,c:move.to.c},to:{r:next.r,c:next.c,jr:next.jr,jc:next.jc},isCapture:true});
+    }
+  }
   return nb;
 }
 
-function evaluateBoard(b){
+function evaluate(b){
   let score=0;
+  let aiPieces=0,playerPieces=0,aiKings=0,playerKings=0;
+  let aiAdvance=0,playerAdvance=0;
+  let aiCenter=0,playerCenter=0;
+  let aiBack=0,playerBack=0;
+  
   for(let r=0;r<8;r++)for(let c=0;c<8;c++){
-    if(b[r][c]){
-      const val=b[r][c].king?5:1;
-      const positionBonus=b[r][c].color===aiColor?(aiColor==="black"?r:7-r)*0.1:0;
-      if(b[r][c].color===aiColor)score+=val+positionBonus;
-      else score-=val;
+    const p=b[r][c];
+    if(!p)continue;
+    const isAi=p.color===aiColor;
+    if(p.king){
+      if(isAi)aiKings++;else playerKings++;
+    }else{
+      if(isAi){
+        aiPieces++;
+        aiAdvance+=aiColor==="black"?r:7-r;
+        if(aiColor==="black"&&r===0)aiBack++;
+        if(aiColor==="red"&&r===7)aiBack++;
+      }else{
+        playerPieces++;
+        playerAdvance+=playerColor==="black"?r:7-r;
+        if(playerColor==="black"&&r===0)playerBack++;
+        if(playerColor==="red"&&r===7)playerBack++;
+      }
+    }
+    if(c>=2&&c<=5&&r>=2&&r<=5){
+      if(isAi)aiCenter++;else playerCenter++;
     }
   }
+  
+  score+=(aiPieces-playerPieces)*100;
+  score+=(aiKings-playerKings)*300;
+  score+=(aiAdvance-playerAdvance)*2;
+  score+=(aiCenter-playerCenter)*5;
+  score+=(aiBack-playerBack)*4;
+  
+  if(aiPieces+aiKings===0)score-=10000;
+  if(playerPieces+playerKings===0)score+=10000;
+  
   return score;
 }
 
 function minimax(b,depth,isMax,alpha,beta){
-  if(depth===0){
-    return{score:evaluateBoard(b)};
-  }
+  if(depth===0)return{score:evaluate(b)};
   const color=isMax?aiColor:playerColor;
   const moves=getAllMoves(b,color);
-  if(moves.length===0){
-    return{score:isMax?-1000:1000};
-  }
-  let best=isMax?-Infinity:Infinity;
+  if(moves.length===0)return{score:isMax?-10000:10000};
+  
+  moves.sort((a,b)=>(b.isCapture?1:0)-(a.isCapture?1:0));
+  
   let bestMove=moves[0];
-  for(const move of moves){
-    const newBoard=applyMove(b,move);
-    const result=minimax(newBoard,depth-1,!isMax,alpha,beta);
-    if(isMax){
+  if(isMax){
+    let best=-Infinity;
+    for(const move of moves){
+      const newBoard=applyMove(b,move);
+      const result=minimax(newBoard,depth-1,false,alpha,beta);
       if(result.score>best){best=result.score;bestMove=move;}
       alpha=Math.max(alpha,best);
-    }else{
+      if(beta<=alpha)break;
+    }
+    return{score:best,move:bestMove};
+  }else{
+    let best=Infinity;
+    for(const move of moves){
+      const newBoard=applyMove(b,move);
+      const result=minimax(newBoard,depth-1,true,alpha,beta);
       if(result.score<best){best=result.score;bestMove=move;}
       beta=Math.min(beta,best);
+      if(beta<=alpha)break;
     }
-    if(beta<=alpha)break;
+    return{score:best,move:bestMove};
   }
-  return{score:best,move:bestMove};
 }
 
 function aiMove(){
@@ -312,58 +328,24 @@ function aiMove(){
     document.getElementById("status").textContent="YOU WIN! 🎉";
     return;
   }
+  
   let pick;
   if(difficulty==="beginner"){
     pick=allMoves[Math.floor(Math.random()*allMoves.length)];
   }else if(difficulty==="normal"){
     const captures=allMoves.filter(m=>m.isCapture);
-    if(captures.length>0){
-      pick=captures[Math.floor(Math.random()*captures.length)];
-    }else{
-      const scored=allMoves.map(m=>{
-        let score=0;
-        if(aiColor==="black"&&m.to.r>m.from.r)score+=2;
-        if(aiColor==="red"&&m.to.r<m.from.r)score+=2;
-        if(aiColor==="black"&&m.to.r===7)score+=10;
-        if(aiColor==="red"&&m.to.r===0)score+=10;
-        if(m.to.c>=2&&m.to.c<=5)score+=1;
-        return{move:m,score};
-      });
-      scored.sort((a,b)=>b.score-a.score);
-      const top=scored.filter(s=>s.score===scored[0].score);
-      pick=top[Math.floor(Math.random()*top.length)].move;
-    }
-  }else if(difficulty==="hard"){
-    const result=minimax(board,3,true,-Infinity,Infinity);
-    pick=result.move;
+    if(captures.length>0)pick=captures[Math.floor(Math.random()*captures.length)];
+    else pick=allMoves[Math.floor(Math.random()*allMoves.length)];
   }else{
-    const result=minimax(board,5,true,-Infinity,Infinity);
+    const result=minimax(board,DEPTH[difficulty],true,-Infinity,Infinity);
     pick=result.move;
   }
   
   board=applyMove(board,pick);
-  if(pick.isCapture){
-    const moreCaptures=getCaptures(board,pick.to.r,pick.to.c);
-    if(moreCaptures.length>0){
-      setTimeout(()=>{
-        const cap=moreCaptures[0];
-        const piece=board[pick.to.r][pick.to.c];
-        board[cap.r][cap.c]=piece;
-        board[pick.to.r][pick.to.c]=null;
-        board[cap.jr][cap.jc]=null;
-        if(aiColor==="red"&&cap.r===0)board[cap.r][cap.c].king=true;
-        if(aiColor==="black"&&cap.r===7)board[cap.r][cap.c].king=true;
-        turn=playerColor;
-        document.getElementById("status").textContent="Your turn";
-        render();
-      },500);
-      return;
-    }
-  }
   turn=playerColor;
   document.getElementById("status").textContent="Your turn";
   render();
 }
 </script>
 </body>
-</html>
+</html> 
