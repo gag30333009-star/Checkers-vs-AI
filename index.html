@@ -9,15 +9,23 @@ body{background:#1a1a1a;font-family:sans-serif;min-height:100vh;display:flex;fle
 h1{font-size:32px;margin-bottom:0.5rem;color:#EF9F27;letter-spacing:2px;}
 .info{font-size:13px;color:#888;margin-bottom:1rem;letter-spacing:1px;text-align:center;}
 .status{font-size:16px;color:#EF9F27;margin-bottom:1rem;min-height:24px;font-weight:600;}
-.choose{display:flex;flex-direction:column;align-items:center;gap:1rem;padding:2rem;}
-.choose h2{font-size:20px;color:#EF9F27;}
-.choose-btns{display:flex;gap:1rem;}
-.choose-btn{padding:16px 32px;font-size:14px;letter-spacing:2px;text-transform:uppercase;border:2px solid #EF9F27;background:transparent;color:#fff;cursor:pointer;border-radius:4px;font-weight:600;}
-.choose-btn:hover{background:#EF9F27;color:#1a1a1a;}
-.choose-btn.red{border-color:#c92a2a;}
-.choose-btn.red:hover{background:#c92a2a;color:#fff;}
-.choose-btn.black{border-color:#444;}
-.choose-btn.black:hover{background:#444;color:#fff;}
+.screen{display:flex;flex-direction:column;align-items:center;gap:1.5rem;padding:2rem;}
+.screen h2{font-size:20px;color:#EF9F27;letter-spacing:2px;}
+.btns{display:flex;gap:1rem;flex-wrap:wrap;justify-content:center;}
+.opt-btn{padding:14px 28px;font-size:13px;letter-spacing:2px;text-transform:uppercase;border:2px solid #EF9F27;background:transparent;color:#fff;cursor:pointer;border-radius:4px;font-weight:600;min-width:140px;}
+.opt-btn:hover{background:#EF9F27;color:#1a1a1a;}
+.opt-btn.red{border-color:#c92a2a;}
+.opt-btn.red:hover{background:#c92a2a;color:#fff;}
+.opt-btn.black{border-color:#666;}
+.opt-btn.black:hover{background:#444;color:#fff;}
+.opt-btn.green{border-color:#4ade80;}
+.opt-btn.green:hover{background:#4ade80;color:#1a1a1a;}
+.opt-btn.yellow{border-color:#fbbf24;}
+.opt-btn.yellow:hover{background:#fbbf24;color:#1a1a1a;}
+.opt-btn.orange{border-color:#fb923c;}
+.opt-btn.orange:hover{background:#fb923c;color:#1a1a1a;}
+.opt-btn.purple{border-color:#a855f7;}
+.opt-btn.purple:hover{background:#a855f7;color:#fff;}
 #board{display:grid;grid-template-columns:repeat(8,60px);grid-template-rows:repeat(8,60px);border:3px solid #EF9F27;box-shadow:0 0 30px rgba(239,159,39,0.3);}
 .cell{width:60px;height:60px;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative;}
 .light{background:#d4a574;}
@@ -33,43 +41,62 @@ button{background:#EF9F27;color:#1a1a1a;border:none;padding:10px 24px;font-size:
 button:hover{background:#ffb84d;}
 .score{display:flex;gap:2rem;margin-bottom:1rem;font-size:14px;}
 .score span{color:#EF9F27;font-weight:bold;font-size:18px;}
+.level-tag{font-size:11px;color:#888;letter-spacing:2px;text-transform:uppercase;margin-bottom:0.5rem;}
 .hide{display:none;}
 </style>
 </head>
 <body>
 <h1>RUSSIAN CHECKERS</h1>
-<div class="info">Russian rules: pieces can capture backward · Kings move long distance · Captures are mandatory</div>
+<div class="info">Russian rules: pieces capture backward · Kings move long distance · Captures are mandatory</div>
 
-<div id="chooseScreen" class="choose">
+<div id="levelScreen" class="screen">
+<h2>Choose Difficulty</h2>
+<div class="btns">
+<button class="opt-btn green" onclick="chooseLevel('beginner')">🟢 Beginner</button>
+<button class="opt-btn yellow" onclick="chooseLevel('normal')">🟡 Normal</button>
+<button class="opt-btn orange" onclick="chooseLevel('hard')">🟠 Hard</button>
+<button class="opt-btn purple" onclick="chooseLevel('impossible')">🔴 Impossible</button>
+</div>
+</div>
+
+<div id="colorScreen" class="screen hide">
 <h2>Choose Your Color</h2>
-<div class="choose-btns">
-<button class="choose-btn red" onclick="start('red')">Play as RED</button>
-<button class="choose-btn black" onclick="start('black')">Play as BLACK</button>
+<div class="btns">
+<button class="opt-btn red" onclick="start('red')">Play as RED</button>
+<button class="opt-btn black" onclick="start('black')">Play as BLACK</button>
 </div>
 </div>
 
 <div id="gameScreen" class="hide">
+<div class="level-tag" id="levelTag">Normal</div>
 <div class="score">You: <span id="myScore">12</span> · AI: <span id="aiScore">12</span></div>
 <div class="status" id="status">Your turn</div>
 <div id="board"></div>
 <div class="controls">
-<button onclick="showChoose()">New Game</button>
+<button onclick="restart()">New Game</button>
 </div>
 </div>
 
 <script>
-let board=[],selected=null,turn="red",playerColor="red",aiColor="black";
+let board=[],selected=null,turn="red",playerColor="red",aiColor="black",difficulty="normal";
 
-function showChoose(){
-  document.getElementById("chooseScreen").classList.remove("hide");
+function chooseLevel(lvl){
+  difficulty=lvl;
+  document.getElementById("levelScreen").classList.add("hide");
+  document.getElementById("colorScreen").classList.remove("hide");
+}
+
+function restart(){
   document.getElementById("gameScreen").classList.add("hide");
+  document.getElementById("levelScreen").classList.remove("hide");
 }
 
 function start(color){
   playerColor=color;
   aiColor=color==="red"?"black":"red";
-  document.getElementById("chooseScreen").classList.add("hide");
+  document.getElementById("colorScreen").classList.add("hide");
   document.getElementById("gameScreen").classList.remove("hide");
+  document.getElementById("levelTag").textContent=difficulty.toUpperCase();
   newGame();
 }
 
@@ -87,14 +114,14 @@ function newGame(){
 function render(){
   const b=document.getElementById("board");b.innerHTML="";
   let red=0,black=0;
-  const mustCapture=hasCaptureAvailable(playerColor);
+  const mustCapture=hasCaptureAvailable(board,playerColor);
   for(let r=0;r<8;r++)for(let c=0;c<8;c++){
     const cell=document.createElement("div");
     cell.className="cell "+((r+c)%2===0?"light":"dark");
     cell.onclick=()=>click(r,c);
     if(selected&&selected.r===r&&selected.c===c)cell.classList.add("selected");
     if(selected){
-      const moves=getMoves(selected.r,selected.c,mustCapture);
+      const moves=getMoves(board,selected.r,selected.c,mustCapture);
       if(moves.some(m=>m.r===r&&m.c===c))cell.classList.add("valid");
     }
     if(board[r][c]){
@@ -111,30 +138,28 @@ function render(){
   if(black===0){document.getElementById("status").textContent=playerColor==="red"?"YOU WIN! 🎉":"AI WINS! 🤖";return;}
 }
 
-function hasCaptureAvailable(color){
+function hasCaptureAvailable(b,color){
   for(let r=0;r<8;r++)for(let c=0;c<8;c++){
-    if(board[r][c]&&board[r][c].color===color){
-      const captures=getCaptures(r,c);
-      if(captures.length>0)return true;
+    if(b[r][c]&&b[r][c].color===color){
+      if(getCaptures(b,r,c).length>0)return true;
     }
   }
   return false;
 }
 
-function getCaptures(r,c){
-  const p=board[r][c];
+function getCaptures(b,r,c){
+  const p=b[r][c];
   if(!p)return[];
   const captures=[];
   const dirs=[[1,1],[1,-1],[-1,1],[-1,-1]];
-  
   if(p.king){
     for(const[dr,dc]of dirs){
       let foundEnemy=null;
       for(let i=1;i<8;i++){
         const nr=r+dr*i,nc=c+dc*i;
         if(nr<0||nr>=8||nc<0||nc>=8)break;
-        if(board[nr][nc]){
-          if(board[nr][nc].color===p.color)break;
+        if(b[nr][nc]){
+          if(b[nr][nc].color===p.color)break;
           if(foundEnemy)break;
           foundEnemy={r:nr,c:nc};
         }else if(foundEnemy){
@@ -146,7 +171,7 @@ function getCaptures(r,c){
     for(const[dr,dc]of dirs){
       const nr=r+dr,nc=c+dc;
       const jr=r+dr*2,jc=c+dc*2;
-      if(jr>=0&&jr<8&&jc>=0&&jc<8&&!board[jr][jc]&&board[nr]&&board[nr][nc]&&board[nr][nc].color!==p.color){
+      if(jr>=0&&jr<8&&jc>=0&&jc<8&&!b[jr][jc]&&b[nr]&&b[nr][nc]&&b[nr][nc].color!==p.color){
         captures.push({r:jr,c:jc,jr:nr,jc:nc});
       }
     }
@@ -154,13 +179,12 @@ function getCaptures(r,c){
   return captures;
 }
 
-function getMoves(r,c,mustCapture){
-  const p=board[r][c];
+function getMoves(b,r,c,mustCapture){
+  const p=b[r][c];
   if(!p)return[];
-  const captures=getCaptures(r,c);
+  const captures=getCaptures(b,r,c);
   if(mustCapture)return captures;
   if(captures.length>0)return captures;
-  
   const moves=[];
   if(p.king){
     const dirs=[[1,1],[1,-1],[-1,1],[-1,-1]];
@@ -168,7 +192,7 @@ function getMoves(r,c,mustCapture){
       for(let i=1;i<8;i++){
         const nr=r+dr*i,nc=c+dc*i;
         if(nr<0||nr>=8||nc<0||nc>=8)break;
-        if(board[nr][nc])break;
+        if(b[nr][nc])break;
         moves.push({r:nr,c:nc});
       }
     }
@@ -176,7 +200,7 @@ function getMoves(r,c,mustCapture){
     const dirs=p.color==="red"?[[-1,-1],[-1,1]]:[[1,-1],[1,1]];
     for(const[dr,dc]of dirs){
       const nr=r+dr,nc=c+dc;
-      if(nr>=0&&nr<8&&nc>=0&&nc<8&&!board[nr][nc])moves.push({r:nr,c:nc});
+      if(nr>=0&&nr<8&&nc>=0&&nc<8&&!b[nr][nc])moves.push({r:nr,c:nc});
     }
   }
   return moves;
@@ -184,9 +208,9 @@ function getMoves(r,c,mustCapture){
 
 function click(r,c){
   if(turn!==playerColor)return;
-  const mustCapture=hasCaptureAvailable(playerColor);
+  const mustCapture=hasCaptureAvailable(board,playerColor);
   if(selected){
-    const moves=getMoves(selected.r,selected.c,mustCapture);
+    const moves=getMoves(board,selected.r,selected.c,mustCapture);
     const move=moves.find(m=>m.r===r&&m.c===c);
     if(move){
       board[r][c]=board[selected.r][selected.c];
@@ -194,8 +218,7 @@ function click(r,c){
       if(move.jr!==undefined)board[move.jr][move.jc]=null;
       if(playerColor==="red"&&r===0)board[r][c].king=true;
       if(playerColor==="black"&&r===7)board[r][c].king=true;
-      
-      const moreCaptures=move.jr!==undefined?getCaptures(r,c):[];
+      const moreCaptures=move.jr!==undefined?getCaptures(board,r,c):[];
       if(moreCaptures.length>0){
         selected={r,c};
         render();
@@ -205,66 +228,127 @@ function click(r,c){
       turn=aiColor;
       document.getElementById("status").textContent="AI thinking...";
       render();
-      setTimeout(aiMove,800);
+      setTimeout(aiMove,600);
       return;
     }
     selected=null;
   }
   if(board[r][c]&&board[r][c].color===playerColor){
     if(mustCapture){
-      const captures=getCaptures(r,c);
-      if(captures.length===0){render();return;}
+      if(getCaptures(board,r,c).length===0){render();return;}
     }
     selected={r,c};
   }
   render();
 }
 
-function aiMove(){
-  const mustCapture=hasCaptureAvailable(aiColor);
-  const allMoves=[];
+function cloneBoard(b){return b.map(row=>row.map(c=>c?{...c}:null));}
+
+function getAllMoves(b,color){
+  const mustCapture=hasCaptureAvailable(b,color);
+  const all=[];
   for(let r=0;r<8;r++)for(let c=0;c<8;c++){
-    if(board[r][c]&&board[r][c].color===aiColor){
-      const moves=getMoves(r,c,mustCapture);
-      for(const m of moves)allMoves.push({from:{r,c},to:m,isCapture:m.jr!==undefined});
+    if(b[r][c]&&b[r][c].color===color){
+      const moves=getMoves(b,r,c,mustCapture);
+      for(const m of moves)all.push({from:{r,c},to:m,isCapture:m.jr!==undefined});
     }
   }
+  return all;
+}
+
+function applyMove(b,move){
+  const nb=cloneBoard(b);
+  nb[move.to.r][move.to.c]=nb[move.from.r][move.from.c];
+  nb[move.from.r][move.from.c]=null;
+  if(move.to.jr!==undefined)nb[move.to.jr][move.to.jc]=null;
+  const piece=nb[move.to.r][move.to.c];
+  if(piece.color==="red"&&move.to.r===0)piece.king=true;
+  if(piece.color==="black"&&move.to.r===7)piece.king=true;
+  return nb;
+}
+
+function evaluateBoard(b){
+  let score=0;
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    if(b[r][c]){
+      const val=b[r][c].king?5:1;
+      const positionBonus=b[r][c].color===aiColor?(aiColor==="black"?r:7-r)*0.1:0;
+      if(b[r][c].color===aiColor)score+=val+positionBonus;
+      else score-=val;
+    }
+  }
+  return score;
+}
+
+function minimax(b,depth,isMax,alpha,beta){
+  if(depth===0){
+    return{score:evaluateBoard(b)};
+  }
+  const color=isMax?aiColor:playerColor;
+  const moves=getAllMoves(b,color);
+  if(moves.length===0){
+    return{score:isMax?-1000:1000};
+  }
+  let best=isMax?-Infinity:Infinity;
+  let bestMove=moves[0];
+  for(const move of moves){
+    const newBoard=applyMove(b,move);
+    const result=minimax(newBoard,depth-1,!isMax,alpha,beta);
+    if(isMax){
+      if(result.score>best){best=result.score;bestMove=move;}
+      alpha=Math.max(alpha,best);
+    }else{
+      if(result.score<best){best=result.score;bestMove=move;}
+      beta=Math.min(beta,best);
+    }
+    if(beta<=alpha)break;
+  }
+  return{score:best,move:bestMove};
+}
+
+function aiMove(){
+  const allMoves=getAllMoves(board,aiColor);
   if(allMoves.length===0){
     document.getElementById("status").textContent="YOU WIN! 🎉";
     return;
   }
-  
   let pick;
-  const captures=allMoves.filter(m=>m.isCapture);
-  if(captures.length>0){
-    pick=captures[Math.floor(Math.random()*captures.length)];
+  if(difficulty==="beginner"){
+    pick=allMoves[Math.floor(Math.random()*allMoves.length)];
+  }else if(difficulty==="normal"){
+    const captures=allMoves.filter(m=>m.isCapture);
+    if(captures.length>0){
+      pick=captures[Math.floor(Math.random()*captures.length)];
+    }else{
+      const scored=allMoves.map(m=>{
+        let score=0;
+        if(aiColor==="black"&&m.to.r>m.from.r)score+=2;
+        if(aiColor==="red"&&m.to.r<m.from.r)score+=2;
+        if(aiColor==="black"&&m.to.r===7)score+=10;
+        if(aiColor==="red"&&m.to.r===0)score+=10;
+        if(m.to.c>=2&&m.to.c<=5)score+=1;
+        return{move:m,score};
+      });
+      scored.sort((a,b)=>b.score-a.score);
+      const top=scored.filter(s=>s.score===scored[0].score);
+      pick=top[Math.floor(Math.random()*top.length)].move;
+    }
+  }else if(difficulty==="hard"){
+    const result=minimax(board,3,true,-Infinity,Infinity);
+    pick=result.move;
   }else{
-    const scored=allMoves.map(m=>{
-      let score=0;
-      if(aiColor==="black"&&m.to.r>m.from.r)score+=2;
-      if(aiColor==="red"&&m.to.r<m.from.r)score+=2;
-      if(aiColor==="black"&&m.to.r===7)score+=10;
-      if(aiColor==="red"&&m.to.r===0)score+=10;
-      if(m.to.c>=2&&m.to.c<=5)score+=1;
-      return{move:m,score};
-    });
-    scored.sort((a,b)=>b.score-a.score);
-    const top=scored.filter(s=>s.score===scored[0].score);
-    pick=top[Math.floor(Math.random()*top.length)].move;
+    const result=minimax(board,5,true,-Infinity,Infinity);
+    pick=result.move;
   }
   
-  board[pick.to.r][pick.to.c]=board[pick.from.r][pick.from.c];
-  board[pick.from.r][pick.from.c]=null;
-  if(pick.to.jr!==undefined)board[pick.to.jr][pick.to.jc]=null;
-  if(aiColor==="red"&&pick.to.r===0)board[pick.to.r][pick.to.c].king=true;
-  if(aiColor==="black"&&pick.to.r===7)board[pick.to.r][pick.to.c].king=true;
-  
+  board=applyMove(board,pick);
   if(pick.isCapture){
-    const moreCaptures=getCaptures(pick.to.r,pick.to.c);
+    const moreCaptures=getCaptures(board,pick.to.r,pick.to.c);
     if(moreCaptures.length>0){
       setTimeout(()=>{
         const cap=moreCaptures[0];
-        board[cap.r][cap.c]=board[pick.to.r][pick.to.c];
+        const piece=board[pick.to.r][pick.to.c];
+        board[cap.r][cap.c]=piece;
         board[pick.to.r][pick.to.c]=null;
         board[cap.jr][cap.jc]=null;
         if(aiColor==="red"&&cap.r===0)board[cap.r][cap.c].king=true;
@@ -272,11 +356,10 @@ function aiMove(){
         turn=playerColor;
         document.getElementById("status").textContent="Your turn";
         render();
-      },600);
+      },500);
       return;
     }
   }
-  
   turn=playerColor;
   document.getElementById("status").textContent="Your turn";
   render();
