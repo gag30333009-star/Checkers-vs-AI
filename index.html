@@ -6,10 +6,9 @@
 <title>Russian Checkers</title>
 
 <style>
-
 body{
   margin:0;
-  background:#08203a;
+  background:#0a2540;
   font-family:Arial;
   color:white;
   display:flex;
@@ -18,43 +17,32 @@ body{
 }
 
 h1{
-  margin-top:20px;
-}
-
-#status{
   margin:15px;
-  font-size:22px;
 }
 
 #board{
   display:grid;
   grid-template-columns:repeat(8,80px);
   grid-template-rows:repeat(8,80px);
-  border:8px solid #5c3415;
+  border:6px solid #5a3415;
 }
 
 .cell{
   width:80px;
   height:80px;
   display:flex;
-  justify-content:center;
   align-items:center;
+  justify-content:center;
   position:relative;
 }
 
-.light{
-  background:#e6cf9f;
-}
-
-.dark{
-  background:#5a3415;
-}
+.light{ background:#e6cf9f; }
+.dark{ background:#5a3415; }
 
 .piece{
-  width:62px;
-  height:62px;
+  width:60px;
+  height:60px;
   border-radius:50%;
-  cursor:pointer;
 }
 
 .white{
@@ -68,7 +56,7 @@ h1{
 }
 
 .selected{
-  box-shadow:inset 0 0 0 5px gold;
+  outline:4px solid gold;
 }
 
 .valid::after{
@@ -76,17 +64,16 @@ h1{
   width:18px;
   height:18px;
   border-radius:50%;
-  background:#5ec9ff;
+  background:#4fc3ff;
   position:absolute;
 }
 
 .king::before{
   content:"♛";
-  color:gold;
-  font-size:30px;
   position:absolute;
+  color:gold;
+  font-size:28px;
 }
-
 </style>
 </head>
 
@@ -94,419 +81,262 @@ h1{
 
 <h1>RUSSIAN CHECKERS</h1>
 
-<div id="status">White Turn</div>
-
 <div id="board"></div>
 
 <script>
 
-let board = [];
+let board=[];
+let selected=null;
+let turn="white";
+let playerCapturing=false;
 
-let selected = null;
+function inside(r,c){
+  return r>=0&&r<8&&c>=0&&c<8;
+}
 
-let turn = "white";
-
-let forcedPiece = null;
-
-function createBoard(){
-
-  board = Array(8)
-    .fill()
-    .map(()=>Array(8).fill(null));
-
-  // black pieces
+function init(){
+  board = Array(8).fill().map(()=>Array(8).fill(null));
 
   for(let r=0;r<3;r++){
-
     for(let c=0;c<8;c++){
-
-      if((r+c)%2===1){
-
-        board[r][c] = {
-          color:"black",
-          king:false
-        };
-      }
+      if((r+c)%2===1)
+        board[r][c]={color:"black",king:false};
     }
   }
 
-  // white pieces
-
   for(let r=5;r<8;r++){
-
     for(let c=0;c<8;c++){
-
-      if((r+c)%2===1){
-
-        board[r][c] = {
-          color:"white",
-          king:false
-        };
-      }
+      if((r+c)%2===1)
+        board[r][c]={color:"white",king:false};
     }
   }
 
   render();
 }
 
-function render(){
+/* ================= CAPTURE ================= */
 
-  const boardEl =
-    document.getElementById("board");
+function getCaptures(b,r,c){
 
-  boardEl.innerHTML = "";
+  const p=b[r][c];
+  if(!p) return [];
 
-  let validMoves = [];
+  const dirs=[[1,1],[1,-1],[-1,1],[-1,-1]];
+  let caps=[];
 
-  if(selected){
+  if(!p.king){
 
-    validMoves =
-      getMoves(
-        selected.r,
-        selected.c
-      );
-  }
+    for(const [dr,dc] of dirs){
 
-  for(let r=0;r<8;r++){
-
-    for(let c=0;c<8;c++){
-
-      const cell =
-        document.createElement("div");
-
-      cell.className =
-        "cell " +
-        (((r+c)%2===0)
-          ? "light"
-          : "dark");
+      const mr=r+dr,mc=c+dc;
+      const lr=r+dr*2,lc=c+dc*2;
 
       if(
-        selected &&
-        selected.r===r &&
-        selected.c===c
+        inside(lr,lc) &&
+        b[mr] && b[mr][mc] &&
+        b[mr][mc].color!==p.color &&
+        !b[lr][lc]
       ){
-        cell.classList.add("selected");
+        caps.push({r:lr,c:lc,jr:mr,jc:mc});
       }
+    }
 
-      if(
-        validMoves.some(
-          m=>m.r===r && m.c===c
-        )
-      ){
-        cell.classList.add("valid");
-      }
+  }else{
 
-      cell.onclick = ()=>clickCell(r,c);
+    for(const [dr,dc] of dirs){
 
-      const piece = board[r][c];
+      let enemy=null;
 
-      if(piece){
+      for(let i=1;i<8;i++){
 
-        const pieceEl =
-          document.createElement("div");
+        const nr=r+dr*i,nc=c+dc*i;
 
-        pieceEl.className =
-          "piece " +
-          piece.color;
+        if(!inside(nr,nc)) break;
 
-        if(piece.king){
+        if(b[nr][nc]){
 
-          pieceEl.classList.add("king");
+          if(b[nr][nc].color===p.color) break;
+          if(enemy) break;
+
+          enemy={r:nr,c:nc};
         }
+        else if(enemy){
 
-        cell.appendChild(pieceEl);
+          caps.push({
+            r:nr,c:nc,
+            jr:enemy.r,jc:enemy.c
+          });
+        }
       }
-
-      boardEl.appendChild(cell);
-    }
-  }
-}
-
-function inside(r,c){
-
-  return (
-    r>=0 &&
-    r<8 &&
-    c>=0 &&
-    c<8
-  );
-}
-
-function getCaptures(r,c){
-
-  const piece = board[r][c];
-
-  if(!piece) return [];
-
-  const dirs = [
-    [1,1],
-    [1,-1],
-    [-1,1],
-    [-1,-1]
-  ];
-
-  const captures = [];
-
-  for(const [dr,dc] of dirs){
-
-    const mr = r + dr;
-    const mc = c + dc;
-
-    const jr = r + dr*2;
-    const jc = c + dc*2;
-
-    if(
-      inside(jr,jc) &&
-      board[mr][mc] &&
-      board[mr][mc].color !== piece.color &&
-      !board[jr][jc]
-    ){
-
-      captures.push({
-        r:jr,
-        c:jc,
-        jr:mr,
-        jc:mc
-      });
     }
   }
 
-  return captures;
+  return caps;
 }
 
 function hasCapture(color){
 
   for(let r=0;r<8;r++){
-
     for(let c=0;c<8;c++){
 
-      const piece = board[r][c];
+      const p=board[r][c];
 
-      if(
-        piece &&
-        piece.color===color &&
-        getCaptures(r,c).length>0
-      ){
+      if(p&&p.color===color){
 
-        return true;
+        if(getCaptures(board,r,c).length>0)
+          return true;
       }
     }
   }
-
   return false;
 }
 
-function getMoves(r,c){
+/* ================= MOVES ================= */
 
-  const piece = board[r][c];
+function getMoves(b,r,c){
 
-  if(!piece) return [];
+  const p=b[r][c];
+  if(!p) return [];
 
-  const captures =
-    getCaptures(r,c);
+  const caps=getCaptures(b,r,c);
 
-  // forced capture rule
+  if(hasCapture(p.color))
+    return caps;
 
-  if(hasCapture(piece.color)){
-
-    return captures;
-  }
-
-  const moves = [];
-
-  let dirs = [];
-
-  if(piece.king){
-
-    dirs = [
-      [1,1],
-      [1,-1],
-      [-1,1],
-      [-1,-1]
-    ];
-
-  }else{
-
-    dirs =
-      piece.color==="white"
-      ? [[-1,-1],[-1,1]]
-      : [[1,-1],[1,1]];
-  }
+  let moves=[];
+  const dirs=p.king
+    ? [[1,1],[1,-1],[-1,1],[-1,-1]]
+    : (p.color==="white"
+        ? [[-1,-1],[-1,1]]
+        : [[1,-1],[1,1]]);
 
   for(const [dr,dc] of dirs){
 
-    const nr = r + dr;
-    const nc = c + dc;
+    const nr=r+dr,nc=c+dc;
 
-    if(
-      inside(nr,nc) &&
-      !board[nr][nc]
-    ){
-
-      moves.push({
-        r:nr,
-        c:nc
-      });
+    if(inside(nr,nc)&&!b[nr][nc]){
+      moves.push({r:nr,c:nc});
     }
   }
 
   return moves;
 }
 
-function movePiece(fr,fc,tr,tc){
+/* ================= MOVE ================= */
 
-  const move =
-    getMoves(fr,fc)
-      .find(
-        m=>m.r===tr && m.c===tc
-      );
+function move(fr,fc,tr,tc){
 
-  if(!move) return;
+  const p=board[fr][fc];
 
-  const piece = board[fr][fc];
+  const m=getMoves(board,fr,fc)
+    .find(x=>x.r===tr&&x.c===tc);
 
-  board[tr][tc] = piece;
+  if(!m) return;
 
-  board[fr][fc] = null;
+  board[tr][tc]=p;
+  board[fr][fc]=null;
 
-  let captured = false;
+  let captured=false;
 
-  // remove captured piece
-
-  if(move.jr!==undefined){
-
-    board[move.jr][move.jc] = null;
-
-    captured = true;
+  if(m.jr!==undefined){
+    board[m.jr][m.jc]=null;
+    captured=true;
   }
 
-  // king promotion
-
-  if(
-    piece.color==="white" &&
-    tr===0
-  ){
-    piece.king = true;
-  }
-
-  if(
-    piece.color==="black" &&
-    tr===7
-  ){
-    piece.king = true;
-  }
-
-  // MULTI CAPTURE
+  if(p.color==="white"&&tr===0) p.king=true;
+  if(p.color==="black"&&tr===7) p.king=true;
 
   if(captured){
 
-    const more =
-      getCaptures(tr,tc);
+    const more=getCaptures(board,tr,tc);
 
     if(more.length>0){
 
-      selected = {
-        r:tr,
-        c:tc
-      };
-
-      forcedPiece = {
-        r:tr,
-        c:tc
-      };
-
+      selected={r:tr,c:tc};
+      playerCapturing=true;
       render();
-
       return;
     }
   }
 
-  selected = null;
+  selected=null;
+  playerCapturing=false;
 
-  forcedPiece = null;
-
-  turn =
-    turn==="white"
-    ? "black"
-    : "white";
-
-  document.getElementById(
-    "status"
-  ).textContent =
-    turn.charAt(0).toUpperCase()
-    + turn.slice(1)
-    + " Turn";
+  turn=turn==="white"?"black":"white";
 
   render();
 }
 
+/* ================= CLICK ================= */
+
 function clickCell(r,c){
 
-  const piece = board[r][c];
-
-  // move selected piece
+  const p=board[r][c];
 
   if(selected){
 
-    const moves =
-      getMoves(
-        selected.r,
-        selected.c
-      );
+    const moves=getMoves(board,selected.r,selected.c);
 
-    const valid =
-      moves.find(
-        m=>m.r===r && m.c===c
-      );
+    const ok=moves.find(m=>m.r===r&&m.c===c);
 
-    if(valid){
-
-      movePiece(
-        selected.r,
-        selected.c,
-        r,
-        c
-      );
-
+    if(ok){
+      move(selected.r,selected.c,r,c);
       return;
     }
   }
 
-  // forced multi capture
+  if(p&&p.color===turn){
 
-  if(forcedPiece){
-
-    if(
-      r!==forcedPiece.r ||
-      c!==forcedPiece.c
-    ){
+    if(hasCapture(turn)&&getCaptures(board,r,c).length===0)
       return;
-    }
-  }
 
-  // select piece
-
-  if(
-    piece &&
-    piece.color===turn
-  ){
-
-    // must capture rule
-
-    if(
-      hasCapture(turn) &&
-      getCaptures(r,c).length===0
-    ){
-      return;
-    }
-
-    selected = {r,c};
-
+    selected={r,c};
     render();
   }
 }
 
-createBoard();
+/* ================= RENDER ================= */
+
+function render(){
+
+  const el=document.getElementById("board");
+  el.innerHTML="";
+
+  let valid=[];
+
+  if(selected){
+    valid=getMoves(board,selected.r,selected.c);
+  }
+
+  for(let r=0;r<8;r++){
+    for(let c=0;c<8;c++){
+
+      const cell=document.createElement("div");
+      cell.className="cell "+((r+c)%2?"dark":"light");
+
+      if(selected&&selected.r===r&&selected.c===c)
+        cell.classList.add("selected");
+
+      if(valid.some(m=>m.r===r&&m.c===c))
+        cell.classList.add("valid");
+
+      cell.onclick=()=>clickCell(r,c);
+
+      const p=board[r][c];
+
+      if(p){
+
+        const d=document.createElement("div");
+        d.className="piece "+p.color+(p.king?" king":"");
+        cell.appendChild(d);
+      }
+
+      el.appendChild(cell);
+    }
+  }
+}
+
+init();
 
 </script>
 
