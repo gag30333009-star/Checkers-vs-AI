@@ -2,73 +2,73 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
-<title>Russian Checkers vs AI</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Russian Checkers</title>
 
 <style>
-*{
-  margin:0;
-  padding:0;
-  box-sizing:border-box;
-}
 
 body{
-  background:#0a2540;
-  color:white;
+  margin:0;
+  background:#08203a;
   font-family:Arial;
+  color:white;
   display:flex;
   flex-direction:column;
   align-items:center;
-  padding:20px;
 }
 
 h1{
-  margin-bottom:20px;
+  margin-top:20px;
+}
+
+#status{
+  margin:15px;
+  font-size:22px;
 }
 
 #board{
   display:grid;
-  grid-template-columns:repeat(8,70px);
-  grid-template-rows:repeat(8,70px);
-  border:5px solid #5a3d20;
+  grid-template-columns:repeat(8,80px);
+  grid-template-rows:repeat(8,80px);
+  border:8px solid #5c3415;
 }
 
 .cell{
-  width:70px;
-  height:70px;
+  width:80px;
+  height:80px;
   display:flex;
-  align-items:center;
   justify-content:center;
+  align-items:center;
   position:relative;
 }
 
 .light{
-  background:#e8d4a8;
+  background:#e6cf9f;
 }
 
 .dark{
-  background:#5a3d20;
+  background:#5a3415;
 }
 
 .piece{
-  width:55px;
-  height:55px;
+  width:62px;
+  height:62px;
   border-radius:50%;
   cursor:pointer;
 }
 
 .white{
-  background:#f5e6c8;
-  border:3px solid #999;
+  background:#f7f2df;
+  border:3px solid #c7b28a;
 }
 
 .black{
-  background:#1a1a1a;
-  border:3px solid #555;
+  background:#1c120b;
+  border:3px solid #5a3a20;
 }
 
 .selected{
-  outline:4px solid gold;
+  box-shadow:inset 0 0 0 5px gold;
 }
 
 .valid::after{
@@ -76,21 +76,17 @@ h1{
   width:18px;
   height:18px;
   border-radius:50%;
-  background:#66ccff;
+  background:#5ec9ff;
   position:absolute;
 }
 
 .king::before{
   content:"♛";
-  position:absolute;
   color:gold;
-  font-size:24px;
+  font-size:30px;
+  position:absolute;
 }
 
-#status{
-  margin:20px;
-  font-size:22px;
-}
 </style>
 </head>
 
@@ -98,7 +94,7 @@ h1{
 
 <h1>RUSSIAN CHECKERS</h1>
 
-<div id="status">Your turn</div>
+<div id="status">White Turn</div>
 
 <div id="board"></div>
 
@@ -110,11 +106,15 @@ let selected = null;
 
 let turn = "white";
 
-let playerCapturing = false;
+let forcedPiece = null;
 
-function initBoard(){
+function createBoard(){
 
-  board = Array(8).fill().map(()=>Array(8).fill(null));
+  board = Array(8)
+    .fill()
+    .map(()=>Array(8).fill(null));
+
+  // black pieces
 
   for(let r=0;r<3;r++){
 
@@ -126,10 +126,11 @@ function initBoard(){
           color:"black",
           king:false
         };
-
       }
     }
   }
+
+  // white pieces
 
   for(let r=5;r<8;r++){
 
@@ -141,7 +142,6 @@ function initBoard(){
           color:"white",
           king:false
         };
-
       }
     }
   }
@@ -151,7 +151,8 @@ function initBoard(){
 
 function render(){
 
-  const boardEl = document.getElementById("board");
+  const boardEl =
+    document.getElementById("board");
 
   boardEl.innerHTML = "";
 
@@ -159,31 +160,39 @@ function render(){
 
   if(selected){
 
-    validMoves = getMoves(
-      selected.r,
-      selected.c
-    );
+    validMoves =
+      getMoves(
+        selected.r,
+        selected.c
+      );
   }
 
   for(let r=0;r<8;r++){
 
     for(let c=0;c<8;c++){
 
-      const cell = document.createElement("div");
+      const cell =
+        document.createElement("div");
 
       cell.className =
         "cell " +
-        ((r+c)%2===0 ? "light":"dark");
+        (((r+c)%2===0)
+          ? "light"
+          : "dark");
 
-      if(selected &&
-         selected.r===r &&
-         selected.c===c){
-
+      if(
+        selected &&
+        selected.r===r &&
+        selected.c===c
+      ){
         cell.classList.add("selected");
       }
 
-      if(validMoves.some(m=>m.r===r && m.c===c)){
-
+      if(
+        validMoves.some(
+          m=>m.r===r && m.c===c
+        )
+      ){
         cell.classList.add("valid");
       }
 
@@ -193,7 +202,8 @@ function render(){
 
       if(piece){
 
-        const pieceEl = document.createElement("div");
+        const pieceEl =
+          document.createElement("div");
 
         pieceEl.className =
           "piece " +
@@ -214,10 +224,12 @@ function render(){
 
 function inside(r,c){
 
-  return r>=0 &&
-         r<8 &&
-         c>=0 &&
-         c<8;
+  return (
+    r>=0 &&
+    r<8 &&
+    c>=0 &&
+    c<8
+  );
 }
 
 function getCaptures(r,c){
@@ -233,7 +245,7 @@ function getCaptures(r,c){
     [-1,-1]
   ];
 
-  let captures = [];
+  const captures = [];
 
   for(const [dr,dc] of dirs){
 
@@ -268,11 +280,11 @@ function hasCapture(color){
 
     for(let c=0;c<8;c++){
 
-      const p = board[r][c];
+      const piece = board[r][c];
 
       if(
-        p &&
-        p.color===color &&
+        piece &&
+        piece.color===color &&
         getCaptures(r,c).length>0
       ){
 
@@ -290,17 +302,17 @@ function getMoves(r,c){
 
   if(!piece) return [];
 
-  const captures = getCaptures(r,c);
+  const captures =
+    getCaptures(r,c);
 
-  if(captures.length>0){
+  // forced capture rule
+
+  if(hasCapture(piece.color)){
 
     return captures;
   }
 
-  if(hasCapture(piece.color)){
-
-    return [];
-  }
+  const moves = [];
 
   let dirs = [];
 
@@ -320,8 +332,6 @@ function getMoves(r,c){
       ? [[-1,-1],[-1,1]]
       : [[1,-1],[1,1]];
   }
-
-  let moves = [];
 
   for(const [dr,dc] of dirs){
 
@@ -345,8 +355,11 @@ function getMoves(r,c){
 
 function movePiece(fr,fc,tr,tc){
 
-  const move = getMoves(fr,fc)
-    .find(m=>m.r===tr && m.c===tc);
+  const move =
+    getMoves(fr,fc)
+      .find(
+        m=>m.r===tr && m.c===tc
+      );
 
   if(!move) return;
 
@@ -356,30 +369,39 @@ function movePiece(fr,fc,tr,tc){
 
   board[fr][fc] = null;
 
-  let wasCapture = false;
+  let captured = false;
+
+  // remove captured piece
 
   if(move.jr!==undefined){
 
     board[move.jr][move.jc] = null;
 
-    wasCapture = true;
+    captured = true;
   }
 
-  if(piece.color==="white" && tr===0){
+  // king promotion
 
+  if(
+    piece.color==="white" &&
+    tr===0
+  ){
     piece.king = true;
   }
 
-  if(piece.color==="black" && tr===7){
-
+  if(
+    piece.color==="black" &&
+    tr===7
+  ){
     piece.king = true;
   }
 
-  // MULTI CAPTURE FIX
+  // MULTI CAPTURE
 
-  if(wasCapture){
+  if(captured){
 
-    const more = getCaptures(tr,tc);
+    const more =
+      getCaptures(tr,tc);
 
     if(more.length>0){
 
@@ -388,7 +410,10 @@ function movePiece(fr,fc,tr,tc){
         c:tc
       };
 
-      playerCapturing = true;
+      forcedPiece = {
+        r:tr,
+        c:tc
+      };
 
       render();
 
@@ -396,20 +421,21 @@ function movePiece(fr,fc,tr,tc){
     }
   }
 
-  playerCapturing = false;
-
   selected = null;
+
+  forcedPiece = null;
 
   turn =
     turn==="white"
     ? "black"
     : "white";
 
-  document.getElementById("status")
-    .textContent =
-    turn==="white"
-    ? "White turn"
-    : "Black turn";
+  document.getElementById(
+    "status"
+  ).textContent =
+    turn.charAt(0).toUpperCase()
+    + turn.slice(1)
+    + " Turn";
 
   render();
 }
@@ -418,15 +444,20 @@ function clickCell(r,c){
 
   const piece = board[r][c];
 
+  // move selected piece
+
   if(selected){
 
-    const moves = getMoves(
-      selected.r,
-      selected.c
-    );
+    const moves =
+      getMoves(
+        selected.r,
+        selected.c
+      );
 
     const valid =
-      moves.find(m=>m.r===r && m.c===c);
+      moves.find(
+        m=>m.r===r && m.c===c
+      );
 
     if(valid){
 
@@ -441,29 +472,41 @@ function clickCell(r,c){
     }
   }
 
+  // forced multi capture
+
+  if(forcedPiece){
+
+    if(
+      r!==forcedPiece.r ||
+      c!==forcedPiece.c
+    ){
+      return;
+    }
+  }
+
+  // select piece
+
   if(
     piece &&
     piece.color===turn
   ){
 
+    // must capture rule
+
     if(
       hasCapture(turn) &&
       getCaptures(r,c).length===0
     ){
-
       return;
     }
 
-    selected = {
-      r,
-      c
-    };
+    selected = {r,c};
 
     render();
   }
 }
 
-initBoard();
+createBoard();
 
 </script>
 
