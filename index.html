@@ -40,7 +40,7 @@ h1{font-size:clamp(22px,5.5vw,36px);margin-bottom:0.3rem;color:var(--cream);lett
 @keyframes pulse-red{0%,100%{box-shadow:inset 0 0 0 4px #d4615a,inset 0 0 20px rgba(212,97,90,0.4);}50%{box-shadow:inset 0 0 0 4px #e87a72,inset 0 0 35px rgba(212,97,90,0.8),0 0 22px #d4615a;}}
 .can-capture{animation:pulse-gold 1.3s infinite;}
 @keyframes pulse-gold{0%,100%{box-shadow:inset 0 0 0 3px var(--gold),inset 0 0 15px rgba(212,165,116,0.3);}50%{box-shadow:inset 0 0 0 3px #e6c08a,inset 0 0 28px rgba(212,165,116,0.7),0 0 20px var(--gold);}}
-.piece{width:var(--piece);height:var(--piece);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:bold;transition:transform 0.5s cubic-bezier(0.4,0,0.2,1);position:relative;z-index:5;}
+.piece{width:var(--piece);height:var(--piece);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:bold;transition:transform 0.4s cubic-bezier(0.4,0,0.2,1);position:relative;z-index:5;}
 .white-p{background:radial-gradient(circle at 32% 28%,#fffef5 0%,#f5e6c8 25%,#e0c896 55%,#b89968 85%,#8b6f47 100%);box-shadow:0 8px 16px rgba(0,0,0,0.7),inset 0 -6px 12px rgba(139,111,71,0.4),inset 0 3px 6px rgba(255,255,255,0.6),0 2px 4px rgba(0,0,0,0.3);border:2px solid #8b6f47;}
 .white-p::before{content:"";position:absolute;top:12%;left:22%;width:25%;height:18%;background:radial-gradient(ellipse,rgba(255,255,255,0.95),transparent 70%);border-radius:50%;filter:blur(1px);}
 .white-p::after{content:"";position:absolute;width:65%;height:65%;border-radius:50%;border:2px solid rgba(139,111,71,0.4);box-shadow:inset 0 0 10px rgba(139,111,71,0.3),inset 0 4px 6px rgba(255,255,255,0.2);}
@@ -107,7 +107,9 @@ function soundLose(){initAudio();const n=[440,392,349,294];n.forEach((f,i)=>setT
 function soundKing(){initAudio();playTone(800,0.15,"triangle",0.3);setTimeout(()=>playTone(1200,0.2,"triangle",0.3),100);}
 function soundDraw(){initAudio();playTone(440,0.4,"sine",0.3);setTimeout(()=>playTone(440,0.4,"sine",0.3),450);}
 
-let board=[],selected=null,turn="white",playerColor="white",aiColor="black",difficulty="normal",aiPlanning=false,gameEnded=false,playerCapturing=false,movesWithoutCapture=0;
+// "white" is always TOP, "black" is always BOTTOM in the array.
+// playerColor pieces move toward row 0 (up), aiColor pieces move toward row 7 (down) — handled by direction logic.
+let board=[],selected=null,turn=null,playerColor="white",aiColor="black",difficulty="normal",aiBusy=false,gameEnded=false,playerBusy=false,movesWithoutCapture=0;
 const DEPTH={beginner:1,normal:2,hard:5,impossible:7};
 
 function chooseLevel(lvl){difficulty=lvl;document.getElementById("levelScreen").classList.add("hide");document.getElementById("colorScreen").classList.remove("hide");}
@@ -131,86 +133,160 @@ function endGame(text,result){
   else soundDraw();
 }
 
-function checkDraw(){
-  if(movesWithoutCapture>=30){
-    endGame("DRAW! 🤝 (15 moves each without capture)","draw");
-    render();
-    return true;
+function newGame(){
+  board=Array(8).fill().map(()=>Array(8).fill(null));
+  // player pieces always at bottom (rows 5-7), AI at top (rows 0-2)
+  for(let r=0;r<3;r++)for(let c=0;c<8;c++)if((r+c)%2===1)board[r][c]={color:aiColor,king:false};
+  for(let r=5;r<8;r++)for(let c=0;c<8;c++)if((r+c)%2===1)board[r][c]={color:playerColor,king:false};
+  selected=null;turn=playerColor;aiBusy=false;gameEnded=false;playerBusy=false;movesWithoutCapture=0;
+  document.getElementById("status").textContent="Your turn";
+  render();
+}
+
+// ---- Direction: a color moves "up" (-1) if it's the player, "down" (+1) if it's the AI ----
+function forwardDir(color){
+  return color===playerColor?-1:1;
+}
+function promotionRow(color){
+  // player promotes at row 0 (top), AI promotes at row 7 (bottom)
+  return color===playerColor?0:7;
+}
+
+function cloneBoard(b){return b.map(row=>row.map(c=>c?{...c}:null));}
+
+// ---- Single-step captures from a square ----
+function getCaptures(b,r,c){
+  const p=b[r][c];if(!p)return[];
+  const captures=[];const dirs=[[1,1],[1,-1],[-1,1],[-1,-1]];
+  if(p.king){
+    for(const[dr,dc]of dirs){
+      let enemy=null;
+      for(let i=1;i<8;i++){
+        const nr=r+dr*i,nc=c+dc*i;
+        if(nr<0||nr>=8||nc<0||nc>=8)break;
+        if(b[nr][nc]){
+          if(b[nr][nc].color===p.color)break;
+          if(enemy)break;
+          enemy={r:nr,c:nc};
+        }else if(enemy){
+          captures.push({r:nr,c:nc,jr:enemy.r,jc:enemy.c});
+        }
+      }
+    }
+  }else{
+    for(const[dr,dc]of dirs){
+      const nr=r+dr,nc=c+dc,jr=r+dr*2,jc=c+dc*2;
+      if(jr>=0&&jr<8&&jc>=0&&jc<8&&!b[jr][jc]&&b[nr]&&b[nr][nc]&&b[nr][nc].color!==p.color){
+        captures.push({r:jr,c:jc,jr:nr,jc:nc});
+      }
+    }
   }
+  return captures;
+}
+
+// ---- Simple (non-capture) moves ----
+function getSimpleMoves(b,r,c){
+  const p=b[r][c];if(!p)return[];
+  const moves=[];
+  if(p.king){
+    const dirs=[[1,1],[1,-1],[-1,1],[-1,-1]];
+    for(const[dr,dc]of dirs){
+      for(let i=1;i<8;i++){
+        const nr=r+dr*i,nc=c+dc*i;
+        if(nr<0||nr>=8||nc<0||nc>=8)break;
+        if(b[nr][nc])break;
+        moves.push({r:nr,c:nc});
+      }
+    }
+  }else{
+    const fd=forwardDir(p.color);
+    for(const dc of [-1,1]){
+      const nr=r+fd,nc=c+dc;
+      if(nr>=0&&nr<8&&nc>=0&&nc<8&&!b[nr][nc])moves.push({r:nr,c:nc});
+    }
+  }
+  return moves;
+}
+
+// ---- Find ALL full capture chains starting at (r,c). Returns array of sequences. ----
+// Each sequence is a list of steps: {r,c,jr,jc}
+function findChains(b,r,c){
+  const caps=getCaptures(b,r,c);
+  if(caps.length===0)return [];
+  const chains=[];
+  for(const cap of caps){
+    const nb=cloneBoard(b);
+    // move piece, remove captured
+    nb[cap.r][cap.c]=nb[r][c];
+    nb[r][c]=null;
+    nb[cap.jr][cap.jc]=null;
+    // promote mid-chain if reaches promotion row (Russian: becomes king and continues as king)
+    const piece=nb[cap.r][cap.c];
+    if(!piece.king&&cap.r===promotionRow(piece.color))piece.king=true;
+    const further=findChains(nb,cap.r,cap.c);
+    if(further.length===0){
+      chains.push([cap]);
+    }else{
+      for(const f of further)chains.push([cap,...f]);
+    }
+  }
+  return chains;
+}
+
+function colorHasCapture(b,color){
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++)
+    if(b[r][c]&&b[r][c].color===color&&getCaptures(b,r,c).length>0)return true;
   return false;
 }
 
-function newGame(){
-  board=Array(8).fill().map(()=>Array(8).fill(null));
-  for(let r=0;r<3;r++)for(let c=0;c<8;c++)if((r+c)%2===1)board[r][c]={color:"black",king:false};
-  for(let r=5;r<8;r++)for(let c=0;c<8;c++)if((r+c)%2===1)board[r][c]={color:"white",king:false};
-  selected=null;turn="white";aiPlanning=false;gameEnded=false;playerCapturing=false;movesWithoutCapture=0;
-  document.getElementById("status").textContent=turn===playerColor?"Your turn":"AI thinking...";
-  render();
-  if(turn!==playerColor)setTimeout(planAndMove,600);
-}
-
-function findAllCaptureSequences(b,r,c){
-  const piece=b[r][c];
-  if(!piece)return[];
-  const captures=getCaptures(b,r,c);
-  if(captures.length===0)return[[]];
-  const sequences=[];
-  for(const cap of captures){
-    const newBoard=cloneBoard(b);
-    newBoard[cap.r][cap.c]=newBoard[r][c];
-    newBoard[r][c]=null;
-    newBoard[cap.jr][cap.jc]=null;
-    if(newBoard[cap.r][cap.c].color==="white"&&cap.r===0)newBoard[cap.r][cap.c].king=true;
-    if(newBoard[cap.r][cap.c].color==="black"&&cap.r===7)newBoard[cap.r][cap.c].king=true;
-    const further=findAllCaptureSequences(newBoard,cap.r,cap.c);
-    for(const seq of further){
-      sequences.push([cap,...seq]);
-    }
-  }
-  return sequences;
-}
-
-function render(){
-  const b=document.getElementById("board");b.innerHTML="";
-  let white=0,black=0;
-  const mustCapture=hasCaptureAvailable(board,playerColor);
-  let victims=new Set();
-  let validDests=new Set();
-  let canCaptureCells=new Set();
-  if(mustCapture&&turn===playerColor&&!selected){
-    for(let r=0;r<8;r++)for(let c=0;c<8;c++){
-      if(board[r][c]&&board[r][c].color===playerColor&&getCaptures(board,r,c).length>0){
-        canCaptureCells.add(r+","+c);
+function getAllMoves(b,color){
+  const mustCap=colorHasCapture(b,color);
+  const all=[];
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    if(b[r][c]&&b[r][c].color===color){
+      if(mustCap){
+        const chains=findChains(b,r,c);
+        for(const ch of chains)all.push({from:{r,c},chain:ch,isCapture:true});
+      }else{
+        const moves=getSimpleMoves(b,r,c);
+        for(const m of moves)all.push({from:{r,c},to:m,isCapture:false});
       }
     }
   }
+  return all;
+}
+
+// ---- Render ----
+function render(){
+  const b=document.getElementById("board");b.innerHTML="";
+  let myCount=0,aiCount=0;
+  const mustCap=colorHasCapture(board,playerColor);
+  let validDests=new Set();
+  let victims=new Set();
+  let canCaptureCells=new Set();
+
+  if(mustCap&&turn===playerColor&&!selected){
+    for(let r=0;r<8;r++)for(let c=0;c<8;c++)
+      if(board[r][c]&&board[r][c].color===playerColor&&getCaptures(board,r,c).length>0)
+        canCaptureCells.add(r+","+c);
+  }
+
   if(selected){
-    if(playerCapturing){
-      const sequences=findAllCaptureSequences(board,selected.r,selected.c);
-      for(const seq of sequences){
-        if(seq.length>0){
-          validDests.add(seq[seq.length-1].r+","+seq[seq.length-1].c);
-          for(const step of seq)victims.add(step.jr+","+step.jc);
+    if(mustCap){
+      const chains=findChains(board,selected.r,selected.c);
+      for(const ch of chains){
+        if(ch.length>0){
+          const last=ch[ch.length-1];
+          validDests.add(last.r+","+last.c);
+          for(const step of ch)victims.add(step.jr+","+step.jc);
         }
       }
     }else{
-      const moves=getMoves(board,selected.r,selected.c,mustCapture);
-      for(const m of moves){
-        if(m.jr!==undefined){
-          const sequences=findAllCaptureSequences(board,selected.r,selected.c);
-          for(const seq of sequences){
-            if(seq.length>0&&seq[0].r===m.r&&seq[0].c===m.c){
-              validDests.add(seq[seq.length-1].r+","+seq[seq.length-1].c);
-              for(const step of seq)victims.add(step.jr+","+step.jc);
-            }
-          }
-        }else{
-          validDests.add(m.r+","+m.c);
-        }
-      }
+      const moves=getSimpleMoves(board,selected.r,selected.c);
+      for(const m of moves)validDests.add(m.r+","+m.c);
     }
   }
+
   for(let r=0;r<8;r++)for(let c=0;c<8;c++){
     const cell=document.createElement("div");
     cell.className="cell "+((r+c)%2===0?"light-sq":"dark-sq");
@@ -230,217 +306,166 @@ function render(){
         p.appendChild(crown);
       }
       cell.appendChild(p);
-      if(board[r][c].color==="white")white++;else black++;
+      if(board[r][c].color===playerColor)myCount++;else aiCount++;
     }
     b.appendChild(cell);
   }
-  document.getElementById("myScore").textContent=playerColor==="white"?white:black;
-  document.getElementById("aiScore").textContent=aiColor==="white"?white:black;
+  document.getElementById("myScore").textContent=myCount;
+  document.getElementById("aiScore").textContent=aiCount;
+
   if(gameEnded)return;
-  if(white===0){endGame("BLACK WINS! 🤖",playerColor==="black"?"win":"lose");return;}
-  if(black===0){endGame("WHITE WINS! 🎉",playerColor==="white"?"win":"lose");return;}
-  if(turn===playerColor&&!aiPlanning&&!playerCapturing){
-    const playerMoves=getAllMoves(board,playerColor);
-    if(playerMoves.length===0){
-      const winnerColor=aiColor==="white"?"WHITE":"BLACK";
-      endGame(winnerColor+" WINS! 🏆 (No moves available)","lose");
-      return;
-    }
+  const myName=playerColor==="white"?"WHITE":"BLACK";
+  const aiName=aiColor==="white"?"WHITE":"BLACK";
+  if(myCount===0){endGame(aiName+" WINS! 🤖","lose");return;}
+  if(aiCount===0){endGame(myName+" WINS! 🎉","win");return;}
+  if(turn===playerColor&&!aiBusy&&!playerBusy){
+    if(getAllMoves(board,playerColor).length===0){endGame(aiName+" WINS! 🏆 (No moves available)","lose");return;}
   }
-  if(turn===aiColor){
-    const aiMoves=getAllMoves(board,aiColor);
-    if(aiMoves.length===0){
-      const winnerColor=playerColor==="white"?"WHITE":"BLACK";
-      endGame(winnerColor+" WINS! 🏆 (No moves available)","win");
-      return;
-    }
+  if(turn===aiColor&&!aiBusy){
+    if(getAllMoves(board,aiColor).length===0){endGame(myName+" WINS! 🏆 (No moves available)","win");return;}
   }
 }
 
-function hasCaptureAvailable(b,color){for(let r=0;r<8;r++)for(let c=0;c<8;c++)if(b[r][c]&&b[r][c].color===color&&getCaptures(b,r,c).length>0)return true;return false;}
-
-function getCaptures(b,r,c){
-  const p=b[r][c];if(!p)return[];
-  const captures=[];const dirs=[[1,1],[1,-1],[-1,1],[-1,-1]];
-  if(p.king){
-    for(const[dr,dc]of dirs){
-      let foundEnemy=null;
-      for(let i=1;i<8;i++){
-        const nr=r+dr*i,nc=c+dc*i;
-        if(nr<0||nr>=8||nc<0||nc>=8)break;
-        if(b[nr][nc]){
-          if(b[nr][nc].color===p.color)break;
-          if(foundEnemy)break;
-          foundEnemy={r:nr,c:nc};
-        }else if(foundEnemy)captures.push({r:nr,c:nc,jr:foundEnemy.r,jc:foundEnemy.c});
-      }
-    }
-  }else{
-    for(const[dr,dc]of dirs){
-      const nr=r+dr,nc=c+dc,jr=r+dr*2,jc=c+dc*2;
-      if(jr>=0&&jr<8&&jc>=0&&jc<8&&!b[jr][jc]&&b[nr]&&b[nr][nc]&&b[nr][nc].color!==p.color)captures.push({r:jr,c:jc,jr:nr,jc:nc});
-    }
+// ---- Animation ----
+function animateMove(fromR,fromC,toR,toC,callback){
+  const cells=document.querySelectorAll(".cell");
+  let fromCell=null,toCell=null;
+  for(const cell of cells){
+    if(+cell.dataset.r===fromR&&+cell.dataset.c===fromC)fromCell=cell;
+    if(+cell.dataset.r===toR&&+cell.dataset.c===toC)toCell=cell;
   }
-  return captures;
+  if(!fromCell||!toCell){callback();return;}
+  const piece=fromCell.querySelector(".piece");
+  if(!piece){callback();return;}
+  fromCell.classList.add("selected");
+  const fr=fromCell.getBoundingClientRect();
+  const tr=toCell.getBoundingClientRect();
+  piece.classList.add("moving");
+  setTimeout(()=>{
+    piece.style.transform=`translate(${tr.left-fr.left}px,${tr.top-fr.top}px)`;
+    setTimeout(callback,420);
+  },40);
 }
 
-function getMoves(b,r,c,mustCapture){
-  const p=b[r][c];if(!p)return[];
-  const captures=getCaptures(b,r,c);
-  if(mustCapture)return captures;
-  if(captures.length>0)return captures;
-  const moves=[];
-  if(p.king){
-    const dirs=[[1,1],[1,-1],[-1,1],[-1,-1]];
-    for(const[dr,dc]of dirs){
-      for(let i=1;i<8;i++){
-        const nr=r+dr*i,nc=c+dc*i;
-        if(nr<0||nr>=8||nc<0||nc>=8)break;
-        if(b[nr][nc])break;
-        moves.push({r:nr,c:nc});
-      }
-    }
-  }else{
-    const dirs=p.color==="white"?[[-1,-1],[-1,1]]:[[1,-1],[1,1]];
-    for(const[dr,dc]of dirs){
-      const nr=r+dr,nc=c+dc;
-      if(nr>=0&&nr<8&&nc>=0&&nc<8&&!b[nr][nc])moves.push({r:nr,c:nc});
-    }
-  }
-  return moves;
-}
-
-async function executePlayerCaptureSequence(fromR,fromC,toR,toC){
-  playerCapturing=true;
-  const sequences=findAllCaptureSequences(board,fromR,fromC);
-  let chosenSeq=null;
-  for(const seq of sequences){
-    if(seq.length>0&&seq[seq.length-1].r===toR&&seq[seq.length-1].c===toC){
-      chosenSeq=seq;break;
-    }
-  }
-  if(!chosenSeq){playerCapturing=false;return;}
-  
+// ---- Execute a full capture chain step by step (works for player AND ai) ----
+async function executeChain(fromR,fromC,chain){
   let curR=fromR,curC=fromC;
-  for(const step of chosenSeq){
+  for(const step of chain){
     await new Promise(resolve=>{
       animateMove(curR,curC,step.r,step.c,()=>{
-        const wasKing=board[curR][curC].king;
-        board[step.r][step.c]=board[curR][curC];
+        const piece=board[curR][curC];
+        board[step.r][step.c]=piece;
         board[curR][curC]=null;
         board[step.jr][step.jc]=null;
         soundCapture();
-        const piece=board[step.r][step.c];
-        if(piece.color==="white"&&step.r===0&&!wasKing){piece.king=true;setTimeout(soundKing,200);}
-        if(piece.color==="black"&&step.r===7&&!wasKing){piece.king=true;setTimeout(soundKing,200);}
+        if(!piece.king&&step.r===promotionRow(piece.color)){piece.king=true;setTimeout(soundKing,150);}
         curR=step.r;curC=step.c;
         render();
-        setTimeout(resolve,200);
+        setTimeout(resolve,150);
       });
     });
   }
-  
-  movesWithoutCapture=0;
-  playerCapturing=false;
-  selected=null;turn=aiColor;
-  document.getElementById("status").textContent="AI thinking...";
-  render();
-  if(!gameEnded)setTimeout(planAndMove,600);
 }
 
+// ---- Player click ----
 function click(r,c){
-  if(turn!==playerColor||aiPlanning||gameEnded||playerCapturing)return;
-  const mustCapture=hasCaptureAvailable(board,playerColor);
+  if(turn!==playerColor||aiBusy||gameEnded||playerBusy)return;
+  const mustCap=colorHasCapture(board,playerColor);
+
   if(selected){
-    const moves=getMoves(board,selected.r,selected.c,mustCapture);
-    const move=moves.find(m=>m.r===r&&m.c===c);
-    if(move){
-      if(move.jr!==undefined){
-        const sequences=findAllCaptureSequences(board,selected.r,selected.c);
-        let isFinalDest=false;
-        for(const seq of sequences){
-          if(seq.length>0&&seq[seq.length-1].r===r&&seq[seq.length-1].c===c){
-            isFinalDest=true;break;
-          }
-        }
-        if(isFinalDest){
-          executePlayerCaptureSequence(selected.r,selected.c,r,c);
-          return;
-        }
-        return;
-      }else{
-        const wasKing=board[selected.r][selected.c].king;
-        board[r][c]=board[selected.r][selected.c];
-        board[selected.r][selected.c]=null;
-        soundMove();
-        movesWithoutCapture++;
-        if(playerColor==="white"&&r===0&&!wasKing){board[r][c].king=true;setTimeout(soundKing,200);}
-        if(playerColor==="black"&&r===7&&!wasKing){board[r][c].king=true;setTimeout(soundKing,200);}
-        if(checkDraw())return;
-        selected=null;turn=aiColor;
-        document.getElementById("status").textContent="AI thinking...";
-        render();
-        if(!gameEnded)setTimeout(planAndMove,600);
+    // capture mode
+    if(mustCap){
+      const chains=findChains(board,selected.r,selected.c);
+      let chosen=null;
+      for(const ch of chains){
+        const last=ch[ch.length-1];
+        if(last.r===r&&last.c===c){chosen=ch;break;}
+      }
+      if(chosen){
+        playerBusy=true;
+        const fr=selected.r,fc=selected.c;
+        selected=null;
+        executeChain(fr,fc,chosen).then(()=>{
+          movesWithoutCapture=0;
+          playerBusy=false;
+          turn=aiColor;
+          document.getElementById("status").textContent="AI thinking...";
+          render();
+          if(!gameEnded)setTimeout(aiTurn,500);
+        });
         return;
       }
+      // clicked elsewhere: maybe selecting another capturing piece
+      if(board[r][c]&&board[r][c].color===playerColor&&getCaptures(board,r,c).length>0){
+        selected={r,c};render();return;
+      }
+      selected=null;render();return;
+    }
+    // simple move mode
+    const moves=getSimpleMoves(board,selected.r,selected.c);
+    const move=moves.find(m=>m.r===r&&m.c===c);
+    if(move){
+      const piece=board[selected.r][selected.c];
+      board[r][c]=piece;
+      board[selected.r][selected.c]=null;
+      soundMove();
+      movesWithoutCapture++;
+      if(!piece.king&&r===promotionRow(piece.color)){piece.king=true;setTimeout(soundKing,150);}
+      selected=null;turn=aiColor;
+      document.getElementById("status").textContent="AI thinking...";
+      render();
+      if(movesWithoutCapture>=30){endGame("DRAW! 🤝 (15 moves each without capture)","draw");return;}
+      if(!gameEnded)setTimeout(aiTurn,500);
+      return;
     }
     selected=null;
   }
+
+  // select a piece
   if(board[r][c]&&board[r][c].color===playerColor){
-    if(mustCapture){if(getCaptures(board,r,c).length===0){render();return;}}
+    if(mustCap&&getCaptures(board,r,c).length===0){render();return;}
     selected={r,c};
   }
   render();
 }
 
-function cloneBoard(b){return b.map(row=>row.map(c=>c?{...c}:null));}
-
-function getAllMoves(b,color){
-  const mustCapture=hasCaptureAvailable(b,color);const all=[];
-  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
-    if(b[r][c]&&b[r][c].color===color){
-      const moves=getMoves(b,r,c,mustCapture);
-      for(const m of moves)all.push({from:{r,c},to:m,isCapture:m.jr!==undefined});
-    }
-  }
-  return all;
-}
-
+// ---- AI ----
 function applyMoveSilent(b,move){
   const nb=cloneBoard(b);
-  nb[move.to.r][move.to.c]=nb[move.from.r][move.from.c];
-  nb[move.from.r][move.from.c]=null;
-  if(move.to.jr!==undefined)nb[move.to.jr][move.to.jc]=null;
-  const piece=nb[move.to.r][move.to.c];
-  if(piece.color==="white"&&move.to.r===0)piece.king=true;
-  if(piece.color==="black"&&move.to.r===7)piece.king=true;
   if(move.isCapture){
-    const more=getCaptures(nb,move.to.r,move.to.c);
-    if(more.length>0){const next=more[0];return applyMoveSilent(nb,{from:{r:move.to.r,c:move.to.c},to:{r:next.r,c:next.c,jr:next.jr,jc:next.jc},isCapture:true});}
+    let curR=move.from.r,curC=move.from.c;
+    for(const step of move.chain){
+      const piece=nb[curR][curC];
+      nb[step.r][step.c]=piece;
+      nb[curR][curC]=null;
+      nb[step.jr][step.jc]=null;
+      if(!piece.king&&step.r===promotionRow(piece.color))piece.king=true;
+      curR=step.r;curC=step.c;
+    }
+  }else{
+    const piece=nb[move.from.r][move.from.c];
+    nb[move.to.r][move.to.c]=piece;
+    nb[move.from.r][move.from.c]=null;
+    if(!piece.king&&move.to.r===promotionRow(piece.color))piece.king=true;
   }
   return nb;
 }
 
 function evaluate(b){
-  let score=0,aiPieces=0,playerPieces=0,aiKings=0,playerKings=0;
-  let aiAdvance=0,playerAdvance=0,aiCenter=0,playerCenter=0,aiBack=0,playerBack=0;
+  let aiP=0,plP=0,aiK=0,plK=0,aiAdv=0,plAdv=0,aiBack=0,plBack=0,aiCen=0,plCen=0;
   for(let r=0;r<8;r++)for(let c=0;c<8;c++){
     const p=b[r][c];if(!p)continue;
     const isAi=p.color===aiColor;
-    if(p.king){if(isAi)aiKings++;else playerKings++;}
+    if(p.king){if(isAi)aiK++;else plK++;}
     else{
-      if(isAi){aiPieces++;aiAdvance+=aiColor==="black"?r:7-r;if((aiColor==="black"&&r===0)||(aiColor==="white"&&r===7))aiBack++;}
-      else{playerPieces++;playerAdvance+=playerColor==="black"?r:7-r;if((playerColor==="black"&&r===0)||(playerColor==="white"&&r===7))playerBack++;}
+      if(isAi){aiP++;aiAdv+=r;if(r===0)aiBack++;}
+      else{plP++;plAdv+=(7-r);if(r===7)plBack++;}
     }
-    if(c>=2&&c<=5&&r>=2&&r<=5){if(isAi)aiCenter++;else playerCenter++;}
+    if(c>=2&&c<=5&&r>=2&&r<=5){if(isAi)aiCen++;else plCen++;}
   }
-  score+=(aiPieces-playerPieces)*100;
-  score+=(aiKings-playerKings)*300;
-  score+=(aiAdvance-playerAdvance)*2;
-  score+=(aiCenter-playerCenter)*5;
-  score+=(aiBack-playerBack)*4;
-  if(aiPieces+aiKings===0)score-=10000;
-  if(playerPieces+playerKings===0)score+=10000;
+  let score=(aiP-plP)*100+(aiK-plK)*300+(aiAdv-plAdv)*2+(aiCen-plCen)*5+(aiBack-plBack)*4;
+  if(aiP+aiK===0)score-=10000;
+  if(plP+plK===0)score+=10000;
   return score;
 }
 
@@ -450,142 +475,70 @@ function minimax(b,depth,isMax,alpha,beta){
   const moves=getAllMoves(b,color);
   if(moves.length===0)return{score:isMax?-10000:10000};
   moves.sort((a,b)=>(b.isCapture?1:0)-(a.isCapture?1:0));
-  let bestMove=moves[0];
-  if(isMax){
-    let best=-Infinity;
-    for(const move of moves){
-      const result=minimax(applyMoveSilent(b,move),depth-1,false,alpha,beta);
-      if(result.score>best){best=result.score;bestMove=move;}
-      alpha=Math.max(alpha,best);if(beta<=alpha)break;
-    }
-    return{score:best,move:bestMove};
-  }else{
-    let best=Infinity;
-    for(const move of moves){
-      const result=minimax(applyMoveSilent(b,move),depth-1,true,alpha,beta);
-      if(result.score<best){best=result.score;bestMove=move;}
-      beta=Math.min(beta,best);if(beta<=alpha)break;
-    }
-    return{score:best,move:bestMove};
+  let best=isMax?-Infinity:Infinity,bestMove=moves[0];
+  for(const move of moves){
+    const res=minimax(applyMoveSilent(b,move),depth-1,!isMax,alpha,beta);
+    if(isMax){if(res.score>best){best=res.score;bestMove=move;}alpha=Math.max(alpha,best);}
+    else{if(res.score<best){best=res.score;bestMove=move;}beta=Math.min(beta,best);}
+    if(beta<=alpha)break;
   }
+  return{score:best,move:bestMove};
 }
 
-function highlightAllAiVictims(move){
-  const victims=[];
-  let curBoard=cloneBoard(board);
-  let cur=move;
-  while(cur&&cur.to.jr!==undefined){
-    victims.push({r:cur.to.jr,c:cur.to.jc});
-    curBoard[cur.to.r][cur.to.c]=curBoard[cur.from.r][cur.from.c];
-    curBoard[cur.from.r][cur.from.c]=null;
-    curBoard[cur.to.jr][cur.to.jc]=null;
-    const more=getCaptures(curBoard,cur.to.r,cur.to.c);
-    if(more.length>0){
-      const next=more[0];
-      cur={from:{r:cur.to.r,c:cur.to.c},to:{r:next.r,c:next.c,jr:next.jr,jc:next.jc},isCapture:true};
-    }else cur=null;
-  }
+function highlightAiVictims(move){
+  if(!move.isCapture)return;
   const cells=document.querySelectorAll(".cell");
-  for(const v of victims){
+  for(const step of move.chain){
     for(const cell of cells){
-      if(parseInt(cell.dataset.r)===v.r&&parseInt(cell.dataset.c)===v.c){
-        cell.classList.add("victim");
-      }
+      if(+cell.dataset.r===step.jr&&+cell.dataset.c===step.jc)cell.classList.add("victim");
     }
   }
 }
 
-function animateMove(fromR,fromC,toR,toC,callback){
-  const cells=document.querySelectorAll(".cell");
-  let fromCell=null,toCell=null;
-  for(const cell of cells){
-    if(parseInt(cell.dataset.r)===fromR&&parseInt(cell.dataset.c)===fromC)fromCell=cell;
-    if(parseInt(cell.dataset.r)===toR&&parseInt(cell.dataset.c)===toC)toCell=cell;
-  }
-  if(!fromCell||!toCell){callback();return;}
-  const piece=fromCell.querySelector(".piece");
-  if(!piece){callback();return;}
-  fromCell.classList.add("selected");
-  const fromRect=fromCell.getBoundingClientRect();
-  const toRect=toCell.getBoundingClientRect();
-  const dx=toRect.left-fromRect.left;
-  const dy=toRect.top-fromRect.top;
-  piece.classList.add("moving");
-  setTimeout(()=>{
-    piece.style.transform=`translate(${dx}px,${dy}px)`;
-    setTimeout(callback,600);
-  },50);
-}
-
-function planAndMove(){
+function aiTurn(){
   if(gameEnded)return;
-  aiPlanning=true;
-  const allMoves=getAllMoves(board,aiColor);
-  if(allMoves.length===0){
-    const winnerColor=playerColor==="white"?"WHITE":"BLACK";
-    endGame(winnerColor+" WINS! 🏆 (No moves available)","win");
-    aiPlanning=false;return;
+  aiBusy=true;
+  const moves=getAllMoves(board,aiColor);
+  if(moves.length===0){
+    const myName=playerColor==="white"?"WHITE":"BLACK";
+    endGame(myName+" WINS! 🏆 (No moves available)","win");
+    aiBusy=false;return;
   }
   let pick;
-  if(difficulty==="beginner"){pick=allMoves[Math.floor(Math.random()*allMoves.length)];}
-  else if(difficulty==="normal"){
-    const captures=allMoves.filter(m=>m.isCapture);
-    if(captures.length>0)pick=captures[Math.floor(Math.random()*captures.length)];
-    else pick=allMoves[Math.floor(Math.random()*allMoves.length)];
+  if(difficulty==="beginner"){
+    pick=moves[Math.floor(Math.random()*moves.length)];
+  }else if(difficulty==="normal"){
+    const caps=moves.filter(m=>m.isCapture);
+    pick=caps.length>0?caps[Math.floor(Math.random()*caps.length)]:moves[Math.floor(Math.random()*moves.length)];
   }else{
-    const result=minimax(board,DEPTH[difficulty],true,-Infinity,Infinity);
-    pick=result.move;
+    pick=minimax(board,DEPTH[difficulty],true,-Infinity,Infinity).move;
   }
-  executeAiMove(pick,true);
-}
 
-function executeAiMove(move,isFirst){
-  if(gameEnded)return;
-  if(move.isCapture){
+  if(pick.isCapture){
     document.getElementById("status").textContent="AI is capturing...";
-    if(isFirst)highlightAllAiVictims(move);
+    highlightAiVictims(pick);
     setTimeout(()=>{
-      animateMove(move.from.r,move.from.c,move.to.r,move.to.c,()=>{
-        const wasKing=board[move.from.r][move.from.c].king;
-        board[move.to.r][move.to.c]=board[move.from.r][move.from.c];
-        board[move.from.r][move.from.c]=null;
-        board[move.to.jr][move.to.jc]=null;
-        soundCapture();
-        const piece=board[move.to.r][move.to.c];
-        let becameKing=false;
-        if(piece.color==="white"&&move.to.r===0&&!wasKing){piece.king=true;becameKing=true;}
-        if(piece.color==="black"&&move.to.r===7&&!wasKing){piece.king=true;becameKing=true;}
-        if(becameKing)setTimeout(soundKing,200);
-        const moreCaptures=getCaptures(board,move.to.r,move.to.c);
-        if(moreCaptures.length>0){
-          const next=moreCaptures[0];
-          setTimeout(()=>executeAiMove({from:{r:move.to.r,c:move.to.c},to:next,isCapture:true},false),700);
-        }else{
-          movesWithoutCapture=0;
-          aiPlanning=false;turn=playerColor;
-          if(!gameEnded)document.getElementById("status").textContent="Your turn";
-          render();
-        }
+      executeChain(pick.from.r,pick.from.c,pick.chain).then(()=>{
+        movesWithoutCapture=0;
+        aiBusy=false;turn=playerColor;
+        if(!gameEnded)document.getElementById("status").textContent="Your turn";
+        render();
       });
-    },isFirst?1200:500);
+    },1000);
   }else{
     document.getElementById("status").textContent="AI is moving...";
     setTimeout(()=>{
-      animateMove(move.from.r,move.from.c,move.to.r,move.to.c,()=>{
-        const wasKing=board[move.from.r][move.from.c].king;
-        board[move.to.r][move.to.c]=board[move.from.r][move.from.c];
-        board[move.from.r][move.from.c]=null;
+      animateMove(pick.from.r,pick.from.c,pick.to.r,pick.to.c,()=>{
+        const piece=board[pick.from.r][pick.from.c];
+        board[pick.to.r][pick.to.c]=piece;
+        board[pick.from.r][pick.from.c]=null;
         soundMove();
         movesWithoutCapture++;
-        const piece=board[move.to.r][move.to.c];
-        let becameKing=false;
-        if(piece.color==="white"&&move.to.r===0&&!wasKing){piece.king=true;becameKing=true;}
-        if(piece.color==="black"&&move.to.r===7&&!wasKing){piece.king=true;becameKing=true;}
-        if(becameKing)setTimeout(soundKing,200);
-        if(checkDraw()){aiPlanning=false;return;}
-        aiPlanning=false;turn=playerColor;
+        if(!piece.king&&pick.to.r===promotionRow(piece.color)){piece.king=true;setTimeout(soundKing,150);}
+        aiBusy=false;turn=playerColor;
         if(!gameEnded)document.getElementById("status").textContent="Your turn";
         render();
+        if(movesWithoutCapture>=30)endGame("DRAW! 🤝 (15 moves each without capture)","draw");
       });
     },500);
   }
