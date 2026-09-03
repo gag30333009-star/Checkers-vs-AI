@@ -29,3 +29,9 @@ A browser-based Russian checkers game where you can play against an AI opponent.
 2. Open the project folder.
 
 3. Open `index.html` in your browser.
+---
+## 👤 Author
+
+**Gag-Dv**
+
+- GitHub: [@gag30333009-star](https://github.com/gag30333009-star)
